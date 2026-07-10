@@ -1,0 +1,5 @@
+.epic/
+appimagetool-*.AppImage
+*.AppImage
+*.zsync
+*.deb

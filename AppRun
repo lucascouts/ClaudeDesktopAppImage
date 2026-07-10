@@ -1,0 +1,23 @@
+#!/bin/sh
+# AppImages cannot ship a setuid chrome-sandbox. Electron falls back to
+# unprivileged user namespaces; where those are blocked (Debian sysctl,
+# Ubuntu 24.04+ AppArmor restriction) the app only starts with --no-sandbox.
+HERE="$(dirname "$(readlink -f "$0")")"
+
+EXTRA_ARGS=""
+userns_clone=/proc/sys/kernel/unprivileged_userns_clone
+apparmor_userns=/proc/sys/kernel/apparmor_restrict_unprivileged_userns
+if [ -r "$userns_clone" ] && [ "$(cat "$userns_clone")" = "0" ]; then
+	EXTRA_ARGS="--no-sandbox"
+elif [ -r "$apparmor_userns" ] && [ "$(cat "$apparmor_userns")" = "1" ]; then
+	EXTRA_ARGS="--no-sandbox"
+fi
+
+if [ -n "$EXTRA_ARGS" ]; then
+	echo "claude-desktop: unprivileged user namespaces are disabled on this system," >&2
+	echo "  starting with --no-sandbox -- the Chromium sandbox is OFF (see README)." >&2
+fi
+
+# shellcheck disable=SC2086 # EXTRA_ARGS is intentionally word-split
+exec "$HERE/usr/lib/claude-desktop/claude-desktop" $EXTRA_ARGS \
+	--ozone-platform-hint=auto "$@"

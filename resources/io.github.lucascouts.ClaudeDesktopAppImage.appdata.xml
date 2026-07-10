@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.lucascouts.ClaudeDesktopAppImage</id>
+
+  <name>Claude Desktop</name>
+  <summary>Chat with Claude from your desktop</summary>
+  <developer id="io.github.lucascouts">
+    <name>lucascouts</name>
+  </developer>
+
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>LicenseRef-proprietary=https://www.anthropic.com/legal/consumer-terms</project_license>
+
+  <description>
+    <p>
+      Claude Desktop brings Anthropic's AI assistant to your desktop: chat with
+      Claude, attach files and screenshots, use voice dictation, start Claude
+      Code sessions on your projects and connect MCP servers for tool use.
+    </p>
+    <p>
+      This is an unofficial AppImage repackaged from Anthropic's official .deb
+      release. It is not affiliated with or endorsed by Anthropic. Requires a
+      Claude.ai account.
+    </p>
+  </description>
+
+  <launchable type="desktop-id">claude-desktop.desktop</launchable>
+
+  <url type="homepage">https://claude.ai</url>
+  <url type="help">https://code.claude.com/docs/en/desktop-linux</url>
+  <url type="bugtracker">https://github.com/lucascouts/ClaudeDesktopAppImage/issues</url>
+
+  <content_rating type="oars-1.1"/>
+
+  <categories>
+    <category>Utility</category>
+    <category>Development</category>
+  </categories>
+
+  <releases>
+    <release version="@VERSION@" date="@DATE@"/>
+  </releases>
+</component>

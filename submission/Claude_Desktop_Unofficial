@@ -1,0 +1,10 @@
+# Submission file for https://github.com/AppImage/appimage.github.io
+# Copy to data/Claude_Desktop_Unofficial in a fork and open a PR.
+authors:
+  - name: lucascouts
+    url: https://github.com/lucascouts
+links:
+  - type: GitHub
+    url: lucascouts/ClaudeDesktopAppImage
+  - type: Download
+    url: https://github.com/lucascouts/ClaudeDesktopAppImage/releases

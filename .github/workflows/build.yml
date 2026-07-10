@@ -1,0 +1,66 @@
+name: Build and release
+
+on:
+  schedule:
+    - cron: '17 */6 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    # Never let a fork publish releases under its own name.
+    if: github.repository_owner == 'lucascouts'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Check for new release
+        id: probe
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          meta="$(curl -fsSL -A 'ClaudeDesktopAppImage-ci (+https://github.com/lucascouts/ClaudeDesktopAppImage)' \
+            https://claude.ai/api/desktop/linux/x64/deb/latest)"
+          version="$(jq -r .version <<<"$meta")"
+          [[ "$version" =~ ^[0-9][0-9.]*$ ]] || { echo "bad version: $version" >&2; exit 1; }
+          echo "version=$version" >>"$GITHUB_OUTPUT"
+          if gh release view "v$version" >/dev/null 2>&1; then
+            echo "new=false" >>"$GITHUB_OUTPUT"
+            echo "v$version already released, nothing to do"
+          else
+            echo "new=true" >>"$GITHUB_OUTPUT"
+          fi
+
+      - name: Install zsync (for AppImageUpdate metadata)
+        if: steps.probe.outputs.new == 'true'
+        run: sudo apt-get update && sudo apt-get install -y zsync
+
+      - name: Build AppImages (x86_64 + aarch64)
+        if: steps.probe.outputs.new == 'true'
+        run: |
+          set -euo pipefail
+          ./build.sh x64
+          ./build.sh arm64
+
+      - name: Create release
+        if: steps.probe.outputs.new == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.probe.outputs.version }}
+        run: |
+          set -euo pipefail
+          gh release create "v$VERSION" \
+            --title "Claude Desktop $VERSION (unofficial AppImage)" \
+            --notes "Unofficial AppImage repackaged from Anthropic's official .deb release (downloads.claude.ai). Not affiliated with or endorsed by Anthropic. The bundled application binaries are unmodified and remain subject to Anthropic's Consumer Terms; releases will be removed on request from Anthropic." \
+            Claude_Desktop_Unofficial-*.AppImage Claude_Desktop_Unofficial-*.AppImage.zsync
