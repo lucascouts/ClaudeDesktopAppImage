@@ -33,16 +33,34 @@ unprivileged user namespaces. On systems where those are disabled (Debian
 
 Releases embed zsync update information — use
 [AppImageUpdate](https://github.com/AppImageCommunity/AppImageUpdate) for
-delta updates. A GitHub Actions workflow polls Anthropic's release API every
-6 hours and publishes new versions automatically.
+delta updates.
+
+New releases are cut by the **Build and release** workflow, triggered manually
+(`Actions → Build and release → Run workflow`) with the `.deb` URL for the
+target version, e.g.
+`https://downloads.claude.ai/releases/linux/x64/1.20186.0/Claude-<id>.deb`.
+
+There is no schedule: `claude.ai/api` (which hands out that URL and its build
+id) sits behind Cloudflare and rejects GitHub's datacenter runner IPs, so the
+latest version cannot be discovered from CI. Obtain the URL where the API is
+reachable — for example:
+
+```bash
+curl -s -A 'Mozilla/5.0 (X11; Linux x86_64) claude-desktop' \
+  https://claude.ai/api/desktop/linux/x64/deb/latest
+```
+
+`downloads.claude.ai` itself is not challenged, so CI downloads the `.deb` fine
+once given the URL. The `aarch64` build reuses the same URL with `/arm64/`.
 
 ## Build locally
 
-Requires `curl`, `jq`, `binutils` (ar), `tar`.
+Requires `curl`, `binutils` (ar), `tar` (and `jq` only for the API-probe form).
 
 ```bash
-./build.sh x64            # or: ./build.sh arm64
-./build.sh x64 /path/to/claude.deb   # reuse an already-downloaded .deb
+./build.sh x64 /path/to/claude.deb            # from a local .deb (no API)
+./build.sh x64 https://downloads.claude.ai/.../Claude-<id>.deb  # from a URL
+./build.sh x64                                # probe the API (non-datacenter IP)
 ```
 
 ## License

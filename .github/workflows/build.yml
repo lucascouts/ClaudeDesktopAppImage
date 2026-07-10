@@ -1,9 +1,16 @@
 name: Build and release
 
 on:
-  schedule:
-    - cron: '17 */6 * * *'
-  workflow_dispatch: {}
+  # No schedule: claude.ai/api is behind Cloudflare and 403s GitHub-hosted
+  # runner IPs, so the latest version/URL cannot be auto-probed from CI.
+  # Trigger manually with the .deb URL (obtained where the API is reachable),
+  # or from a self-hosted/residential runner. See README.
+  workflow_dispatch:
+    inputs:
+      deb_url:
+        description: "Full https://downloads.claude.ai/.../Claude-<id>.deb URL (x64). Required."
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -24,20 +31,21 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Check for new release
+      - name: Resolve version from the .deb URL
         id: probe
         env:
           GH_TOKEN: ${{ github.token }}
+          DEB_URL: ${{ inputs.deb_url }}
         run: |
           set -euo pipefail
-          # claude.ai/api 403s unknown User-Agents behind Cloudflare; the
-          # flatpak-external-data-checker agent is allow-listed (see build.sh).
-          meta="$(curl -fsSL -A 'flatpak-external-data-checker (+https://github.com/flathub-infra/flatpak-external-data-checker)' \
-            https://claude.ai/api/desktop/linux/x64/deb/latest)"
-          version="$(jq -r .version <<<"$meta")"
-          [[ "$version" =~ ^[0-9][0-9.]*$ ]] || { echo "bad version: $version" >&2; exit 1; }
+          case "$DEB_URL" in
+            https://downloads.claude.ai/releases/linux/x64/*/Claude-*.deb) ;;
+            *) echo "deb_url must be an x64 downloads.claude.ai release URL" >&2; exit 1 ;;
+          esac
+          version="$(printf '%s' "$DEB_URL" | sed -n 's#.*/linux/x64/\([0-9][0-9.]*\)/Claude-.*#\1#p')"
+          [[ "$version" =~ ^[0-9][0-9.]*$ ]] || { echo "bad version parsed: $version" >&2; exit 1; }
           echo "version=$version" >>"$GITHUB_OUTPUT"
-          if gh release view "v$version" >/dev/null 2>&1; then
+          if gh release view "v$version" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "new=false" >>"$GITHUB_OUTPUT"
             echo "v$version already released, nothing to do"
           else
@@ -50,10 +58,14 @@ jobs:
 
       - name: Build AppImages (x86_64 + aarch64)
         if: steps.probe.outputs.new == 'true'
+        env:
+          DEB_URL: ${{ inputs.deb_url }}
         run: |
           set -euo pipefail
-          ./build.sh x64
-          ./build.sh arm64
+          # arm64 lives at the same path with the same build id (only /x64/ -> /arm64/).
+          deb_arm64="$(printf '%s' "$DEB_URL" | sed 's#/linux/x64/#/linux/arm64/#')"
+          ./build.sh x64 "$DEB_URL"
+          ./build.sh arm64 "$deb_arm64"
 
       - name: Create release
         if: steps.probe.outputs.new == 'true'

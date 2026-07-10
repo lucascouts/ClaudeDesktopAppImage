@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # Build a Claude Desktop AppImage from Anthropic's official .deb release.
-# Usage: ./build.sh [x64|arm64] [path-to-local.deb]
+# Usage:
+#   ./build.sh [x64|arm64]                    # probe claude.ai (non-datacenter IP only)
+#   ./build.sh [x64|arm64] <deb-path-or-URL>  # build from a given .deb, no API call
 set -euo pipefail
 
 DEB_ARCH="${1:-x64}"
-LOCAL_DEB="${2:-}"
+DEB_SRC="${2:-}"
 
 case "$DEB_ARCH" in
 	x64) APPIMAGE_ARCH="x86_64" ;;
@@ -32,23 +34,44 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKDIR="$(mktemp -d)"
 trap 'rm -rf "$WORKDIR"' EXIT
 
-# --- resolve latest version/url from Anthropic's API ---
-META_JSON="$(curl -fsSL -A "$UA" "$API_URL")"
-VERSION="$(jq -r .version <<<"$META_JSON")"
-DEB_URL="$(jq -r .url <<<"$META_JSON")"
+# --- obtain the .deb and resolve its version ---
+DEB="$WORKDIR/claude.deb"
+if [[ -n "$DEB_SRC" ]]; then
+	# A .deb was supplied (path or URL). No API call: downloads.claude.ai is
+	# not behind Cloudflare, so this path works from CI runners too.
+	if [[ "$DEB_SRC" =~ ^https?:// ]]; then
+		curl -fL --retry 3 -o "$DEB" "$DEB_SRC"
+	else
+		cp "$DEB_SRC" "$DEB"
+	fi
+	# Version comes from the package's own control metadata, not the API.
+	if command -v dpkg-deb >/dev/null; then
+		VERSION="$(dpkg-deb -f "$DEB" Version)"
+	else
+		control_member="$(ar t "$DEB" | grep '^control\.tar' | head -1)"
+		case "$control_member" in
+			*.xz) tarflag=-J ;;
+			*.gz) tarflag=-z ;;
+			*.zst) tarflag=--zstd ;;
+			*) tarflag= ;;
+		esac
+		# Extract only ./control (small) so tar reads to EOF and exits 0 --
+		# piping the full archive to `head` would SIGPIPE tar and trip pipefail.
+		control="$(ar p "$DEB" "$control_member" | tar ${tarflag:+"$tarflag"} -xO ./control 2>/dev/null)"
+		VERSION="$(printf '%s\n' "$control" | sed -n 's/^Version: *//p' | head -1)"
+	fi
+else
+	# Probe Anthropic's API for the latest version+URL. claude.ai is behind
+	# Cloudflare and 403s datacenter IPs, so this only works off-CI.
+	META_JSON="$(curl -fsSL -A "$UA" "$API_URL")"
+	VERSION="$(jq -r .version <<<"$META_JSON")"
+	curl -fL --retry 3 -A "$UA" -o "$DEB" "$(jq -r .url <<<"$META_JSON")"
+fi
 if ! [[ "$VERSION" =~ ^[0-9][0-9.]*$ ]]; then
-	echo "unexpected version from API: $VERSION" >&2
+	echo "unexpected version: $VERSION" >&2
 	exit 1
 fi
-echo ">> latest ${DEB_ARCH}: ${VERSION}"
-
-# --- obtain the .deb ---
-DEB="$WORKDIR/claude.deb"
-if [[ -n "$LOCAL_DEB" ]]; then
-	cp "$LOCAL_DEB" "$DEB"
-else
-	curl -fL --retry 3 -A "$UA" -o "$DEB" "$DEB_URL"
-fi
+echo ">> building ${DEB_ARCH} ${VERSION}"
 
 # --- unpack .deb into AppDir ---
 APPDIR="$WORKDIR/AppDir"
