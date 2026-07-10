@@ -22,7 +22,10 @@ for tool in curl jq ar tar; do
 	}
 done
 
-UA="ClaudeDesktopAppImage (+https://github.com/lucascouts/ClaudeDesktopAppImage)"
+# claude.ai/api sits behind Cloudflare and 403s unknown User-Agents (including a
+# custom one and a bare "Mozilla/5.0"). The flatpak-external-data-checker agent
+# is allow-listed and passes from datacenter IPs, which GitHub's runners use.
+UA="flatpak-external-data-checker (+https://github.com/flathub-infra/flatpak-external-data-checker)"
 API_URL="https://claude.ai/api/desktop/linux/${DEB_ARCH}/deb/latest"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
