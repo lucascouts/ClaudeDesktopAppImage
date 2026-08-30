@@ -35,23 +35,30 @@ Releases embed zsync update information — use
 [AppImageUpdate](https://github.com/AppImageCommunity/AppImageUpdate) for
 delta updates.
 
-New releases are cut by the **Build and release** workflow, triggered manually
-(`Actions → Build and release → Run workflow`) with the `.deb` URL for the
-target version, e.g.
-`https://downloads.claude.ai/releases/linux/x64/1.20186.0/Claude-<id>.deb`.
+New releases are cut automatically: the **Build and release** workflow runs
+every six hours and publishes `v<version>` whenever that tag is missing.
 
-There is no schedule: `claude.ai/api` (which hands out that URL and its build
-id) sits behind Cloudflare and rejects GitHub's datacenter runner IPs, so the
-latest version cannot be discovered from CI. Obtain the URL where the API is
-reachable — for example:
+### Where the version comes from
 
-```bash
-curl -s -A 'Mozilla/5.0 (X11; Linux x86_64) claude-desktop' \
-  https://claude.ai/api/desktop/linux/x64/deb/latest
-```
+Not from Anthropic's API. `claude.ai/api` is what hands out the download URL and
+its per-release build id, but it sits behind Cloudflare and rejects GitHub's
+datacenter runner IPs — no User-Agent gets around that.
 
-`downloads.claude.ai` itself is not challenged, so CI downloads the `.deb` fine
-once given the URL. The `aarch64` build reuses the same URL with `/arm64/`.
+So CI reads the answer second-hand, from the
+[`app-misc/claude-desktop-bin`](https://github.com/obentoo/bentoo/tree/master/app-misc/claude-desktop-bin)
+ebuild in the [bentoo overlay](https://github.com/obentoo/bentoo). That overlay's
+autoupdate *does* query the API — from a residential IP, where it answers — and
+commits both values: the version in the ebuild's filename, the build id in its
+`BUILD_ID`. Reading them back is an ordinary GitHub fetch, which always works
+from CI. That is [`ci/resolve-overlay-pin.sh`](ci/resolve-overlay-pin.sh).
+
+`downloads.claude.ai` itself is not challenged, so downloading the `.deb` from CI
+works fine once the URL is known. The `aarch64` build reuses the same URL with
+`/arm64/` — Anthropic serves the same build id there.
+
+To build some other version, run the workflow manually
+(`Actions → Build and release → Run workflow`) and pass a `deb_url`; that
+overrides the overlay lookup.
 
 ## Build locally
 

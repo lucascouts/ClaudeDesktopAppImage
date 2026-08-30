@@ -1,15 +1,18 @@
 name: Build and release
 
 on:
-  # No schedule: claude.ai/api is behind Cloudflare and 403s GitHub-hosted
-  # runner IPs, so the latest version/URL cannot be auto-probed from CI.
-  # Trigger manually with the .deb URL (obtained where the API is reachable),
-  # or from a self-hosted/residential runner. See README.
+  # What to build comes from the bentoo overlay's app-misc/claude-desktop-bin
+  # ebuild, not from claude.ai/api: Cloudflare 403s that API from GitHub's
+  # datacenter IPs, while the overlay's autoupdate resolves it from a
+  # residential IP and commits the answer. ci/resolve-overlay-pin.sh reads it
+  # back, so the schedule below needs no secret and no self-hosted runner.
+  schedule:
+    - cron: "23 */6 * * *"
   workflow_dispatch:
     inputs:
       deb_url:
-        description: "Full https://downloads.claude.ai/.../Claude-<id>.deb URL (x64). Required."
-        required: true
+        description: "Override: full https://downloads.claude.ai/.../Claude-<id>.deb URL (x64). Leave empty to follow the overlay ebuild."
+        required: false
         type: string
 
 permissions:
@@ -27,24 +30,36 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.0.0
         with:
           persist-credentials: false
 
-      - name: Resolve version from the .deb URL
+      - name: Resolve the version to build
         id: probe
         env:
           GH_TOKEN: ${{ github.token }}
-          DEB_URL: ${{ inputs.deb_url }}
+          DEB_URL_INPUT: ${{ inputs.deb_url }}
         run: |
           set -euo pipefail
-          case "$DEB_URL" in
-            https://downloads.claude.ai/releases/linux/x64/*/Claude-*.deb) ;;
-            *) echo "deb_url must be an x64 downloads.claude.ai release URL" >&2; exit 1 ;;
-          esac
-          version="$(printf '%s' "$DEB_URL" | sed -n 's#.*/linux/x64/\([0-9][0-9.]*\)/Claude-.*#\1#p')"
-          [[ "$version" =~ ^[0-9][0-9.]*$ ]] || { echo "bad version parsed: $version" >&2; exit 1; }
-          echo "version=$version" >>"$GITHUB_OUTPUT"
+          if [[ -n "${DEB_URL_INPUT:-}" ]]; then
+            deb_url="$DEB_URL_INPUT"
+            case "$deb_url" in
+              https://downloads.claude.ai/releases/linux/x64/*/Claude-*.deb) ;;
+              *) echo "deb_url must be an x64 downloads.claude.ai release URL" >&2; exit 1 ;;
+            esac
+            version="$(printf '%s' "$deb_url" | sed -n 's#.*/linux/x64/\([0-9][0-9.]*\)/Claude-.*#\1#p')"
+            [[ "$version" =~ ^[0-9][0-9.]*$ ]] || { echo "bad version parsed: $version" >&2; exit 1; }
+            echo "following the manual override: $version"
+          else
+            pin="$(./ci/resolve-overlay-pin.sh)"
+            version="$(sed -n 's/^version=//p' <<<"$pin")"
+            deb_url="$(sed -n 's/^deb_url_x64=//p' <<<"$pin")"
+            echo "following the overlay ebuild: $version"
+          fi
+          {
+            echo "version=$version"
+            echo "deb_url=$deb_url"
+          } >>"$GITHUB_OUTPUT"
           if gh release view "v$version" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "new=false" >>"$GITHUB_OUTPUT"
             echo "v$version already released, nothing to do"
@@ -59,7 +74,7 @@ jobs:
       - name: Build AppImages (x86_64 + aarch64)
         if: steps.probe.outputs.new == 'true'
         env:
-          DEB_URL: ${{ inputs.deb_url }}
+          DEB_URL: ${{ steps.probe.outputs.deb_url }}
         run: |
           set -euo pipefail
           # arm64 lives at the same path with the same build id (only /x64/ -> /arm64/).
