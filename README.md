@@ -38,6 +38,9 @@ delta updates.
 New releases are cut automatically: the **Build and release** workflow runs
 every six hours and publishes `v<version>` whenever that tag is missing.
 
+(GitHub pauses a schedule after 60 days without repository activity; every
+release counts as activity, so only a two-month gap upstream would trip it.)
+
 ### Where the version comes from
 
 Not from Anthropic's API. `claude.ai/api` is what hands out the download URL and
